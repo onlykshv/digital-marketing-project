@@ -1,0 +1,17 @@
+# Raw & generated data (too large for git; regenerate via src/build_dataset.py)
+data/
+outputs/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Dev/debug scratch artifacts
+*.log
+scratchpad_*.txt
+
+# Env
+.env
+.venv/
+venv/

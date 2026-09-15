@@ -1,0 +1,29 @@
+{
+  "full_feature_set": {
+    "roc_auc": 0.887692974944413,
+    "pr_auc": 0.624597470287883,
+    "precision": 0.43399000294031165,
+    "recall": 0.7605633802816901,
+    "f1": 0.5526365054602184,
+    "log_loss": 0.3877622815496904
+  },
+  "proxy_controlled_set": {
+    "roc_auc": 0.8289194507853879,
+    "pr_auc": 0.4855131293572415,
+    "precision": 0.3223095612405317,
+    "recall": 0.6455971601969541,
+    "f1": 0.42996320375207336,
+    "log_loss": 0.4834666335240447
+  },
+  "excluded_proxy_columns": [
+    "membership_remaining_days",
+    "days_since_last_txn",
+    "latest_is_cancel",
+    "last_transaction_date",
+    "latest_membership_expire_date",
+    "membership_expire_date_invalid"
+  ],
+  "train_rows": 776768,
+  "test_rows": 194192,
+  "random_state": 42
+}

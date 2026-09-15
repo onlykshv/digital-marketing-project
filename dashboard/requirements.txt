@@ -1,0 +1,6 @@
+streamlit==1.63.0
+plotly==7.0.0
+pandas>=2.0
+anthropic>=0.40  # optional: Retention Copilot's LLM synthesis layer. The app runs fine without
+                 # it or an API key -- lib/llm_provider.py falls back to the deterministic,
+                 # grounded answer path when unavailable.
