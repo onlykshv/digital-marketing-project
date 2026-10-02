@@ -172,11 +172,12 @@ if cust_ctx:
         "What are the main reasons this customer was prioritized?",
     ]
 elif segment_choice:
+    # No "compare with Champions" prompt here: segment intents have no comparison route
+    # (copilot_engine.classify_segment_intent), so it could only return the generic overview.
     suggested = [
         f"Tell me about {segment_choice} customers.",
         "Why is this segment important?",
         "What should we do with this segment?",
-        "How does this segment compare with Champions?",
     ]
 else:
     general_groups = [

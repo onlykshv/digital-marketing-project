@@ -552,7 +552,7 @@ def _format_aggregate_answer(m: dict) -> str:
         f"Why it matters: High-risk customers are {high_risk_base_pct:.1f}% of the scored base by count and "
         f"hold {high_risk_revenue_pct:.1f}% of total realized revenue -- the "
         f"{m['high_risk_high_value_customers']:,} customers who are both High risk and High value (above) "
-        "are where risk and revenue genuinely overlap, and where retention effort has the most at stake per customer.",
+        "are where risk and revenue genuinely overlap -- the most revenue already collected per at-risk customer.",
         "Confidence/limitations: High-Risk Historical Revenue Exposure is a headcount exposure sum, not an "
         "expected loss, and Model Risk Score (used to define the High-risk tier) is not a calibrated probability.",
         "Recommended next step: ask \"Which segment needs attention?\" to find where to focus, or "
@@ -578,18 +578,18 @@ def _format_rank_segments_answer(rows: list[dict]) -> str:
     top = rows[0]
     lines = [
         f"Headline: {top['segment']} is the top retention priority -- {top['n_customers']:,} customers, "
-        f"{top['churn_rate_pct']:.1f}% churn, {theme.fmt_currency(top['total_hrr_ntd'])} at stake.",
+        f"{top['churn_rate_pct']:.1f}% churn, {theme.fmt_currency(top['total_hrr_ntd'])} Historical Realized Revenue.",
     ]
     runners_up = rows[1:3]
     if runners_up:
         lines.append("Also worth attention: " + "; ".join(
-            f"{r['priority']}. {r['segment']} ({theme.fmt_currency(r['total_hrr_ntd'])} at stake, "
+            f"{r['priority']}. {r['segment']} ({theme.fmt_currency(r['total_hrr_ntd'])} Historical Realized Revenue, "
             f"recommended: {r['recommended_action']})"
             for r in runners_up
         ) + ".")
     lines.append(f"Recommended action: {top['recommended_action']}.")
     lines.append(
-        "Why it matters: ranked by Historical Realized Revenue at stake among the at-risk segments the "
+        "Why it matters: ranked by Historical Realized Revenue (money already collected) among the at-risk segments the "
         "action framework recommends intervening on -- the same ranking used on Overview and Action Center."
     )
     lines.append(
@@ -597,7 +597,7 @@ def _format_rank_segments_answer(rows: list[dict]) -> str:
         "probability-weighted forecast of prevented churn."
     )
     if len(rows) > 3:
-        lines.append(f"Recommended next step: see the complete ranked list of all {len(rows):,} segments, with revenue at stake and the recommended action for each, in Action Center.")
+        lines.append(f"Recommended next step: see the complete ranked list of all {len(rows):,} segments, with Historical Realized Revenue and the recommended action for each, in Action Center.")
     return "\n".join(lines)
 
 

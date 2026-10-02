@@ -40,11 +40,11 @@ _pending_filter = st.session_state.pop("pending_filter", {}) if "pending_filter"
 def _incoming(key: str, options: list, fallback: list | None = None) -> list | None:
     """A handed-over filter value, restricted to what this page can actually offer.
 
-    The segment vocabulary is wider than this table's: `copilot_data.SEGMENTS` carries all seven
-    groups from marketing_action_plan.csv, while outputs/customer_segments.csv labels customers
-    with only six (the "Unmatched At-Risk (no segment)" group is not present as a per-customer
-    label). Passing a value Streamlit can't find in `options` is a hard StreamlitAPIException, so
-    an unrepresented group must degrade to "no filter" rather than take the page down.
+    A handed-over segment is not guaranteed to be one this table contains (`copilot_data.SEGMENTS`
+    lists every group in marketing_action_plan.csv, the options here are the groups actually present
+    in the loaded table). Passing a value Streamlit can't find in `options` is a hard
+    StreamlitAPIException, so an unrepresented group must degrade to "no filter" rather than take
+    the page down.
     """
     incoming = _pending_filter.get(key)
     if incoming is None:
@@ -121,9 +121,9 @@ queue_view = pd.DataFrame({
     ],
     "recommended_action": queue["segment"].map(data.SHORT_ACTION_BY_SEGMENT).fillna("Standard outreach").astype(str),
 })
-# Customers in an elevated risk tier who carry the Stable / Monitor label inherit that label's
-# "Monitor only" action -- marked so the list never silently presents them as low-risk.
-gap_mask = [data.segment_label_gap(rt, sg) for rt, sg in zip(queue["risk_tier"], queue["segment"])]
+# At-risk customers whose per-customer file label is Stable / Monitor are shown in the unmatched
+# at-risk group (data.resolve_segment) -- marked so the correction is visible, not silent.
+gap_mask = [data.segment_label_gap(rt, fl) for rt, fl in zip(queue["risk_tier"], queue["segment_file_label"])]
 queue_view.loc[gap_mask, "recommended_action"] = queue_view.loc[gap_mask, "recommended_action"] + " †"
 
 list_col, detail_col = st.columns([1.75, 1], gap="medium")
@@ -150,7 +150,7 @@ with list_col:
     st.caption(
         f"{len(filtered):,} customers match these filters -- showing the {min(MAX_ROWS, len(filtered)):,} most at risk. "
         "Select a row to see why that customer was flagged."
-        + (" † = in an elevated risk tier but labelled Stable / Monitor (see the customer's profile)." if any(gap_mask) else "")
+        + (" † = at-risk customer matching no named segment rule, shown in the unmatched at-risk group (see the customer's profile)." if any(gap_mask) else "")
     )
 
 selected_rows = event.selection.rows if event and event.selection else []
@@ -162,13 +162,13 @@ with detail_col:
             st.session_state["cust360_search"] = picked["msno"]
             signal = data.key_risk_signal(picked["latest_is_auto_renew"], picked["days_since_last_txn"], picked["cancel_rate"])
             action = data.SHORT_ACTION_BY_SEGMENT.get(picked["segment"], "Standard outreach")
-            prob = f"{picked['calibrated_probability'] * 100:.0f}%" if pd.notna(picked["calibrated_probability"]) else "—"
+            prob = theme.fmt_probability(picked["calibrated_probability"])
             hrr = theme.fmt_currency(picked["total_revenue"]) if pd.notna(picked["total_revenue"]) else "—"
             theme.panel_head("Selected customer", dot=theme.RISK_COLOR_MAP.get(picked["risk_tier"]), right=f"#{selected_rows[0] + 1} in this list")
             gap_html = (
-                '<div class="ri-gap-note"><span class="k">Label gap</span><span>High on risk, but labelled Stable / Monitor '
-                "&mdash; so the action shown is that label's, not a risk-based one.</span></div>"
-            ) if data.segment_label_gap(picked["risk_tier"], picked["segment"]) else ""
+                '<div class="ri-gap-note"><span class="k">Segment</span><span>Matches none of the named at-risk '
+                "rules, so the standard tier-based playbook applies.</span></div>"
+            ) if data.segment_label_gap(picked["risk_tier"], picked["segment_file_label"]) else ""
             theme.md(
                 f"""<div class="ri-id"><div class="who">{theme.esc(picked['msno'])}</div>
                     <div>{theme.risk_badge(picked['risk_tier'])} &nbsp;{theme.value_chip(picked['value_tier'])}</div></div>

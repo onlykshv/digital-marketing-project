@@ -29,7 +29,7 @@ os.chdir(DASHBOARD_DIR)
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
-from lib import data  # noqa: E402
+from lib import data, theme  # noqa: E402
 
 CUSTOMER_360_PAGE = f"{DASHBOARD_DIR}/pages/customer_360.py"
 ACTION_CENTER_PAGE = f"{DASHBOARD_DIR}/pages/action_center.py"
@@ -72,7 +72,11 @@ def test_customer_360_tenure_fix_reuses_the_same_pd_notna_guard_already_used_nea
     # Regression guard on the fix's own consistency: the exact guard pattern already used two
     # lines above (for calibrated_probability / total_revenue) is now applied to tenure too.
     src = open(CUSTOMER_360_PAGE, encoding="utf-8").read()
-    assert 'pd.notna(full["calibrated_probability"])' in src  # the pre-existing, unmodified guard
+    # The pre-existing missing-value guard for calibrated_probability moved into
+    # theme.fmt_probability (final-submission fix A3, which also bounds 0%/100% as <1%/>99%); the
+    # page now routes the value through it, and the guard itself is asserted behaviorally.
+    assert 'theme.fmt_probability(full["calibrated_probability"])' in src
+    assert theme.fmt_probability(float("nan")) == "—" and theme.fmt_probability(None) == "—"
     assert 'pd.notna(full["tenure_days_at_cutoff"])' in src   # this ticket's fix, same pattern
 
 

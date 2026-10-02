@@ -1,9 +1,9 @@
 """Cached, read-only access to notebooks 01-09's saved outputs.
 
 Every function here only reads existing files under outputs/ and models/ -- nothing in this
-dashboard retrains a model, recomputes a segment, or writes back to those directories. Small
-aggregate files (all under ~10KB) power every page except Customer Lookup, which is the only
-page that touches the large per-customer files, and only once a user explicitly requests it.
+dashboard retrains a model or writes back to those directories. Small aggregate files (all under
+~10KB) power Overview, Customer Value and Action Center; the large per-customer files are read by
+Priority Customers (on open) and by Customer 360 / Retention Intelligence (on request).
 """
 from __future__ import annotations
 
@@ -16,6 +16,10 @@ import streamlit as st
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 MODELS_DIR = PROJECT_ROOT / "models"
+
+STABLE_MONITOR = "Stable / Monitor"
+UNMATCHED_AT_RISK = "Unmatched At-Risk (no segment)"
+ELEVATED_RISK_TIERS = ("High", "Medium")
 
 
 class MissingOutputError(Exception):
@@ -105,7 +109,7 @@ def load_model_comparison() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Large per-customer files -- loaded ONLY by the Customer Lookup page, on demand
+# Large per-customer files -- Priority Customers (on open), Customer 360 / Retention Intelligence (on request)
 # ---------------------------------------------------------------------------
 
 @st.cache_data(show_spinner="Loading customer-level data (~971K rows) -- this can take a moment...")
@@ -130,10 +134,17 @@ def load_customer_lookup_data() -> pd.DataFrame:
         .merge(calibrated, on="msno", how="left")
     )
 
+    # The file's own label is kept as `segment_file_label`; `segment` is the action-framework group
+    # (see resolve_segment) that every page and the Retention Intelligence tools read.
+    df["segment_file_label"] = df["segment"]
+    df["segment"] = df["segment"].where(
+        ~(df["risk_tier"].isin(ELEVATED_RISK_TIERS) & (df["segment"] == STABLE_MONITOR)), UNMATCHED_AT_RISK
+    )
+
     # Memory-conscious downcasting -- this host has ~7.4GB RAM total.
     float_cols = df.select_dtypes("float64").columns
     df[float_cols] = df[float_cols].astype("float32")
-    for col in ("risk_tier", "segment", "value_tier"):
+    for col in ("risk_tier", "segment", "segment_file_label", "value_tier"):
         df[col] = df[col].astype("category")
     return df
 
@@ -166,8 +177,8 @@ _NON_RETENTION_GROUPS = {"Engaged Low-Risk (Champions)", "Stable / Monitor"}
 
 
 def priority_opportunities(action_plan: pd.DataFrame, top_n: int | None = None) -> pd.DataFrame:
-    """The at-risk priority groups from marketing_action_plan.csv, ranked by realized revenue
-    at stake -- the same rows already in that file, just filtered and ordered for the summary
+    """The at-risk priority groups from marketing_action_plan.csv, ranked by Historical Realized
+    Revenue -- the same rows already in that file, just filtered and ordered for the summary
     views (Command Center, Action Center)."""
     opp = action_plan[~action_plan["priority_group"].isin(_NON_RETENTION_GROUPS)].copy()
     opp = opp.sort_values("total_HRR", ascending=False)
@@ -233,7 +244,7 @@ SHORT_ACTION_BY_SEGMENT = {
 SHORT_WHY_BY_SEGMENT = {
     "At-Risk, Auto-Renew Off": "Customer subscription state indicates elevated retention risk.",
     "At-Risk Veteran": "Long-tenured customer showing risk signals despite auto-renew being on.",
-    "At-Risk Newcomer": "New customer (under 6 months) already showing elevated risk -- likely an onboarding gap, not a price issue.",
+    "At-Risk Newcomer": "New customer (under 6 months) already showing elevated risk.",
     "At-Risk, Price-Sensitive": "Heavy historical discount usage alongside elevated risk.",
     "Unmatched At-Risk (no segment)": "Elevated risk without a clear single driver -- treated with the standard tier-based playbook.",
     "Engaged Low-Risk (Champions)": "Low risk and high historical value -- a growth, not retention, case.",
@@ -249,7 +260,7 @@ SHORT_WHY_BY_SEGMENT = {
 AVOID_BY_SEGMENT = {
     "At-Risk, Auto-Renew Off": "Don't lead with a discount -- the framework's highest-leverage response here is a low-cost auto-renew nudge, not a price concession.",
     "At-Risk Veteran": "Avoid a generic acquisition-style script -- this is a long-tenured customer with auto-renew already on; treat as loyalty/appreciation outreach, not a new-customer pitch.",
-    "At-Risk Newcomer": "Avoid assuming a price problem -- the newcomer pattern (under 6 months) points to an onboarding gap, not price sensitivity, so a discount is not the framework's recommendation here.",
+    "At-Risk Newcomer": "Avoid leading with a discount -- this group is defined by short tenure (under 6 months), not by discount usage, so the framework's play here is onboarding support rather than a price concession.",
     "At-Risk, Price-Sensitive": "Avoid a high-touch, high-cost campaign -- this segment's defining signal is discount usage, so the framework calls for a pricing/plan-fit conversation, not premium outreach.",
     "Unmatched At-Risk (no segment)": "Avoid a specialized script -- this customer didn't match any defined segment pattern, so the standard tier-based playbook applies, not a customized one.",
     "Engaged Low-Risk (Champions)": "Avoid retention spend entirely -- this is a growth/advocacy case, not a churn risk, per the framework.",
@@ -283,15 +294,32 @@ def key_risk_signal(latest_is_auto_renew, days_since_last_txn, cancel_rate) -> s
     return "Multiple smaller signals"
 
 
-def segment_label_gap(risk_tier, segment) -> bool:
-    """True when a customer sits in an elevated risk tier but carries the `Stable / Monitor` label.
+def segment_label_gap(risk_tier, file_label) -> bool:
+    """True when a customer sits in an elevated risk tier but the per-customer segment file labels
+    them `Stable / Monitor` -- i.e. the customers `resolve_segment` moves to the unmatched group.
 
-    A presentation flag only -- it changes no label, action or number. The action framework defines
-    an "Unmatched At-Risk (no segment)" group (5,890 Medium/High-risk customers who match none of the
-    named at-risk rules), but outputs/customer_segments.csv has no such per-customer label: those
-    same 5,890 customers (1,255 High + 4,635 Medium) carry "Stable / Monitor" instead, and so inherit
-    its "Monitor only" playbook. Verified in task_1/FINAL_PRESENTATION_READINESS_AUDIT.md (A1). The
-    UI discloses the mismatch wherever such a customer is shown, rather than silently presenting a
-    high-risk customer as low-risk "monitor only".
+    Pass the file's own label (`segment_file_label`), not the resolved `segment`. Used only to say,
+    next to such a customer, why the group shown differs from the file's label.
     """
-    return str(risk_tier) in ("High", "Medium") and str(segment) == "Stable / Monitor"
+    return str(risk_tier) in ELEVATED_RISK_TIERS and str(file_label) == STABLE_MONITOR
+
+
+def resolve_segment(risk_tier, file_label) -> str:
+    """The action-framework group for one customer, given the per-customer file's label.
+
+    marketing_action_plan.csv defines `Stable / Monitor` as the Low-risk default bucket *minus* the
+    "Unmatched At-Risk (no segment)" residual (Medium/High risk, no named at-risk rule matched;
+    5,890 customers). outputs/customer_segments.csv has no per-customer label for that residual:
+    exactly those 5,890 customers (1,255 High + 4,635 Medium) carry `Stable / Monitor` instead, so
+    shown as-is a High-risk customer inherited "Monitor only" / "low churn risk" (A1 in
+    task_1/FINAL_PRESENTATION_READINESS_AUDIT.md). This applies the action plan's own rule at
+    display time. outputs/ is not modified, and no risk tier, score or probability changes.
+
+    Why the file lacks the label: notebook 07 has six labels -- its four at-risk rules are not
+    exhaustive, and at-risk customers matching none fall into the default `Stable / Monitor`
+    (the notebook reports the 5,890). Notebook 09 introduced the seventh group with exactly this
+    rule (`priority_group`) when building marketing_action_plan.csv. Regenerating
+    customer_segments.csv from notebook 07 would not add the label and would overwrite the
+    revalidated segment_summary.csv, so the source file is left as is.
+    """
+    return UNMATCHED_AT_RISK if segment_label_gap(risk_tier, file_label) else str(file_label)

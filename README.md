@@ -23,7 +23,7 @@ outputs/        Generated features / model outputs the dashboard reads  [NOT in 
 `data/` (~12GB raw + archives) and `outputs/` (~2.6GB generated) are excluded via `.gitignore` — several individual files exceed GitHub's 100MB limit. Get them one of two ways:
 
 ### Option A — download the zips (fastest, no pipeline run needed)
-Ask whoever set up the repo for the Drive links, then unzip so contents land exactly here:
+Get `data.zip` and `outputs.zip` from the project team, then unzip so contents land exactly here:
 
 | Zip | Extract to |
 |---|---|
@@ -32,9 +32,9 @@ Ask whoever set up the repo for the Drive links, then unzip so contents land exa
 
 Both folders sit at the repo root, same level as `src/`.
 
-**Drive links:**
-- Raw data (`data.zip`): `<PASTE LINK HERE>`
-- Generated outputs (`outputs.zip`): `<PASTE LINK HERE>`
+Both archives are kept outside git (each is far above GitHub's file-size limit) and are shared
+by the project team on request. The raw data is also the public
+[KKBox Churn Prediction Challenge](https://www.kaggle.com/c/kkbox-churn-prediction-challenge) dataset.
 
 If `outputs.zip` isn't available, regenerate it yourself with Option B step 3 below (needs `data/` first).
 

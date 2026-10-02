@@ -58,10 +58,11 @@ A dark "command dashboard" layout adapted from the Romer SaaS template on Stitch
 
 ## Design notes
 
-- **Memory-conscious by construction**: every page except Customer 360 runs entirely on
-  aggregate files under ~10KB each. The three large per-customer files (~300MB combined) are
-  only read if you click "Load customer data" on Customer 360, and are cached for the rest of
-  that session once loaded.
+- **Memory-conscious by construction**: Overview, Customer Value and Action Center run entirely
+  on aggregate files under ~10KB each. The large per-customer files (~300MB combined, ~971K rows)
+  are read when Priority Customers opens (automatically -- the list is the page) or when you click
+  "Load customer data" on Customer 360 / Retention Intelligence, and are cached for the rest of
+  that session once loaded. On a low-memory machine, close other heavy apps before a demo.
 - **Caveats are not hidden, just not first**: each page carries a collapsed "Methodology &
   limitations" panel covering whichever of these apply — risk-score miscalibration, the
   temporal-validation performance drop, HRR ≠ CLV, and the observational (not causal) nature of

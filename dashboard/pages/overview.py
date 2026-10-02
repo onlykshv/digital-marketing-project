@@ -79,7 +79,7 @@ with funnel_col:
         theme.insight(
             f"The last group is small &mdash; <b>{theme.fmt_count(n_zone)}</b> customers &mdash; but "
             f"<b>{zone_churn:.1f}%</b> of them churn, and each has already spent "
-            f"<b>{theme.fmt_currency(zone_avg_hrr)}</b> on average. That is where personal outreach pays off."
+            f"<b>{theme.fmt_currency(zone_avg_hrr)}</b> on average. That is where personal outreach is most worth considering."
         )
         if st.button(
             f"Review the {theme.fmt_count(n_zone)} high-risk, high-value customers →",

@@ -23,7 +23,7 @@ base_churn_pct = risk_summary["actual_churn_rate"] * 100
 
 theme.masthead(
     "pages/action_center.py", "Action center", "What should we do?",
-    "Your retention playbook: one campaign per customer group, starting where the most revenue is at stake.",
+    "Your retention playbook: one campaign per customer group, starting with the group that has generated the most revenue to date.",
     stats=[
         {"label": "Customers in retention plays", "value": theme.fmt_count(data.customers_requiring_intervention(action_plan)), "dot": theme.COLORS["high"]},
         {"label": "Retention plays", "value": f"{len(all_opportunities)}"},
@@ -31,14 +31,14 @@ theme.masthead(
 )
 
 # ---------------------------------------------------------------------------
-# Start with these two -- the plays with the most realized revenue at stake, each with its own way
+# Start with these two -- the plays with the most Historical Realized Revenue, each with its own way
 # into the customers and the assistant.
 # ---------------------------------------------------------------------------
 p1, p2 = top_two.iloc[0], top_two.iloc[1]
 col1, col2 = st.columns(2, gap="medium")
 with col1:
     with st.container(key="rp_play1"):
-        theme.panel_head("Start here", dot=theme.COLORS["cyan"], right="most revenue at stake")
+        theme.panel_head("Start here", dot=theme.COLORS["cyan"], right="most revenue to date")
         components.play_card(
             eyebrow="PRIORITY 01", row=p1,
             why=data.SHORT_WHY_BY_SEGMENT.get(p1["priority_group"], "Elevated model risk for this segment."),
@@ -161,7 +161,7 @@ st.write("")
 # P1-10: the smaller groups' detail stays behind progressive disclosure -- the playbook above
 # already shows all three at a glance; this is the campaign table for anyone who wants it.
 with st.expander(f"Other customers needing attention -- {len(secondary)} smaller at-risk groups"):
-    st.caption("Same framework, lower revenue at stake.")
+    st.caption("Same framework, less revenue to date.")
     sec_display = secondary[["priority_group", "n_customers", "churn_rate_pct", "total_HRR", "intervention_intensity"]].copy()
     sec_display["total_HRR"] = sec_display["total_HRR"].apply(theme.fmt_currency)
     sec_display = sec_display.rename(columns={

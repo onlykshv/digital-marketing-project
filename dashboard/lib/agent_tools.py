@@ -491,7 +491,7 @@ def rank_segments_by_priority(action_plan: pd.DataFrame, top_n: int | None = Non
 
     Source of truth: `data.priority_opportunities()` (unchanged, reused directly) -- the exact
     same ranking Overview and Action Center already display (sorted by Historical Realized
-    Revenue at stake, excluding Engaged Low-Risk (Champions) and Stable / Monitor, which are not
+    Revenue, excluding Engaged Low-Risk (Champions) and Stable / Monitor, which are not
     retention targets). This function does not recompute or reorder anything itself; it only
     reshapes that existing ranking into tool-friendly rows.
 

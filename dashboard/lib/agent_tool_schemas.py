@@ -214,7 +214,7 @@ TOOL_SCHEMAS = [
         "name": "rank_segments_by_priority",
         "description": (
             "Get the at-risk segments ranked by the current analytical priority framework "
-            "(Historical Realized Revenue at stake) -- the same ranking used on the Overview and "
+            "(Historical Realized Revenue, money already collected) -- the same ranking used on the Overview and "
             "Action Center dashboard pages. Use this for \"which segment should we prioritize\" / "
             "\"which segments need attention\" questions. Excludes Engaged Low-Risk (Champions) "
             "and Stable / Monitor, since neither is a retention target. Does not recompute "

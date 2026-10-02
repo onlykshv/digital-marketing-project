@@ -55,7 +55,7 @@ class CopilotAnswer:
 
 
 def _fmt_pct(x: float | None) -> str:
-    return f"{x * 100:.0f}%" if x is not None else "not available"
+    return theme.fmt_probability(x) if x is not None else "not available"
 
 
 def _fmt_money(ntd: float | None) -> str:
@@ -110,7 +110,7 @@ def build_segment_evidence_lines(seg: dict) -> list[str]:
         lines.append(f"Median days since last transaction: {seg['median_days_since_last_txn']:.0f}")
     if seg["median_tenure_days"] is not None:
         lines.append(f"Median tenure: {seg['median_tenure_days']:.0f} days")
-    lines.append(f"Defining characteristics: {seg['defining_characteristics']}")
+    lines.append(f"Defining characteristics: {theme.convert_ntd_mentions_in_text(seg['defining_characteristics'])}")
     return lines
 
 
@@ -179,7 +179,7 @@ def deterministic_customer_answer(intent: str, cust: dict, pop: dict, champions:
         elif value_tier == "High":
             rec = "Valuable customer, currently lower risk -- protect, don't over-invest in retention spend."
         else:
-            rec = f"{value_tier}-value tier -- weigh retention cost against realized revenue at stake."
+            rec = f"{value_tier}-value tier -- weigh retention cost against the revenue already collected from this customer."
         why = (
             f"Historical Realized Revenue is {_fmt_money(cust['historical_realized_revenue_ntd'])} "
             f"(value tier: {value_tier}). This is money already collected, not a lifetime-value "
@@ -260,16 +260,16 @@ def deterministic_segment_answer(intent: str, seg: dict | None, all_segments: di
         top = ranked[0]
         lines = [
             f"{s['segment']}: {s['n_customers']:,} customers, {s['churn_rate_pct']:.1f}% churn, "
-            f"{_fmt_money(s['total_hrr_ntd'])} realized revenue at stake"
+            f"{_fmt_money(s['total_hrr_ntd'])} Historical Realized Revenue"
             for s in ranked[:3]
         ]
         return CopilotAnswer(
             recommendation=top["segment"],
-            why="Ranked by Historical Realized Revenue at stake among the at-risk segments the "
+            why="Ranked by Historical Realized Revenue (money already collected) among the at-risk segments the "
                 "action framework recommends intervening on -- the same ranking used on Overview "
                 "and Action Center.",
             evidence=lines, what_to_do=top["marketing_objective"],
-            what_to_avoid=f"Avoid spreading equal effort across all segments -- {top['segment']} carries the most realized revenue at risk.",
+            what_to_avoid=f"Avoid spreading equal effort across all segments -- {top['segment']} holds the most Historical Realized Revenue.",
             confidence_basis=SEGMENT_FRAMEWORK_BASIS, sources=[SOURCE_ACTION_FRAMEWORK],
         )
 
@@ -305,7 +305,7 @@ def deterministic_segment_answer(intent: str, seg: dict | None, all_segments: di
 
     return CopilotAnswer(
         recommendation=seg["marketing_objective"],
-        why=seg["defining_characteristics"],
+        why=theme.convert_ntd_mentions_in_text(seg["defining_characteristics"]),
         evidence=build_segment_evidence_lines(seg),
         what_to_do=seg["marketing_objective"],
         what_to_avoid=data.AVOID_BY_SEGMENT.get(seg["segment"], ""),

@@ -821,20 +821,47 @@ def fmt_currency(n: float) -> str:
 # for that NT$ amount, at render time only -- the source file, and the number itself, are
 # untouched.
 _NTD_MENTION_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*NT\$")
+# marketing_action_plan.csv / segment_summary.csv's `defining_characteristics` also state an NT$
+# revenue-per-transaction comparison with no unit at all ("avg revenue/txn 305 vs 150 overall").
+_UNITLESS_REVENUE_PER_TXN_RE = re.compile(r"(avg revenue/txn )([\d,]+(?:\.\d+)?)( vs )([\d,]+(?:\.\d+)?)")
 
 
 def convert_ntd_mentions_in_text(text: str) -> str:
-    """Rewrite every "<number> NT$" mention inside a free-text string into the ₹ figure
-    fmt_currency() would show for that same NT$ amount. Display-only -- never call this on
-    anything that will be re-parsed as a number afterward."""
+    """Rewrite every "<number> NT$" mention, and the unitless "avg revenue/txn <n> vs <n>"
+    comparison, inside a free-text string into the ₹ figures fmt_currency() would show for those
+    NT$ amounts. Display-only -- never call this on anything that will be re-parsed as a number
+    afterward."""
     def _replace(match: "re.Match[str]") -> str:
         try:
             ntd_value = float(match.group(1).replace(",", ""))
         except ValueError:
             return match.group(0)
         return fmt_currency(ntd_value)
-    return _NTD_MENTION_RE.sub(_replace, text)
+
+    def _replace_per_txn(match: "re.Match[str]") -> str:
+        a, b = (float(match.group(i).replace(",", "")) for i in (2, 4))
+        return f"{match.group(1)}{fmt_currency(a)}{match.group(3)}{fmt_currency(b)}"
+
+    text = _NTD_MENTION_RE.sub(_replace, text)
+    return _UNITLESS_REVENUE_PER_TXN_RE.sub(_replace_per_txn, text)
 
 
 def fmt_pct(n: float, decimals: int = 1) -> str:
     return f"{n:.{decimals}f}%"
+
+
+def fmt_probability(p) -> str:
+    """Estimated Churn Probability (0-1) as a whole percent, never as a certainty.
+
+    Isotonic calibration saturates at exactly 0 and 1 for some customers, which a plain
+    `:.0f%` shows as "0%" / "100%". Anything that would round to those is shown as "<1%" / ">99%".
+    Display only -- the underlying probability is unchanged. None/NaN -> "—".
+    """
+    if p is None or p != p:
+        return "—"
+    shown = f"{p * 100:.0f}"
+    if shown == "100":
+        return ">99%"
+    if shown in ("0", "-0"):
+        return "<1%"
+    return f"{shown}%"

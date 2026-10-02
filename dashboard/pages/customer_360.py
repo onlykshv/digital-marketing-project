@@ -191,7 +191,7 @@ avoid = data.AVOID_BY_SEGMENT.get(segment)
 risk_tier = str(cust["risk_tier"])
 
 evidence_stats = [
-    {"label": "Estimated Churn Probability", "value": f"{full['calibrated_probability'] * 100:.0f}%" if pd.notna(full["calibrated_probability"]) else "—"},
+    {"label": "Estimated Churn Probability", "value": theme.fmt_probability(full["calibrated_probability"])},
     {"label": "Model Risk Score", "value": f"{cust['risk_score_full']:.2f}"},
     {"label": "Historical Realized Revenue", "value": theme.fmt_currency(cust["total_revenue"]) if pd.notna(cust["total_revenue"]) else "—"},
     {"label": "Tenure", "value": f"{full['tenure_days_at_cutoff']:.0f} days" if pd.notna(full["tenure_days_at_cutoff"]) else "—"},
@@ -267,11 +267,11 @@ with brief_col:
         # The recommendation is inherited from the customer's segment in the action framework --
         # labelled as such, so it is never read as a bespoke judgement about this one customer.
         gap_html = (
-            '<div class="ri-gap-note"><span class="k">Label gap</span><span>This customer is in the '
-            f"{risk_tier} risk tier but carries the Stable / Monitor label: at-risk customers who match none of "
-            "the named segment rules fall into that label in the per-customer segment file, so this is that "
-            "label's playbook, not a risk-based one.</span></div>"
-        ) if data.segment_label_gap(risk_tier, segment) else ""
+            '<div class="ri-gap-note"><span class="k">Segment</span><span>This customer is in the '
+            f"{risk_tier} risk tier but matches none of the named at-risk segment rules, so the action "
+            "framework places them in the unmatched at-risk group (the per-customer segment file labels "
+            "them Stable / Monitor).</span></div>"
+        ) if data.segment_label_gap(risk_tier, full["segment_file_label"]) else ""
         theme.md(
             f"""<div class="ri-profile ri-id">
                 <div class="who">{theme.esc(cust['msno'])}</div>
