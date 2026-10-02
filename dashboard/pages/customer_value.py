@@ -10,11 +10,10 @@ from lib import caveats, data, theme
 
 theme.apply_page_style()
 
-theme.page_header(
-    "CUSTOMER VALUE",
-    "Who is worth saving?",
-    "Historical Realized Revenue (HRR) across the base -- money already collected, not a "
-    "lifetime-value forecast. See the note at the bottom of this page for what that means.",
+theme.masthead(
+    "pages/customer_value.py", "Customer value", "Who is worth saving?",
+    "Where the risk of leaving meets revenue already earned. Value here is Historical Realized "
+    "Revenue -- money already collected, not a forecast.",
 )
 
 value_analysis = data.safe_load(data.load_value_analysis)
@@ -25,31 +24,100 @@ action_plan = data.safe_load(data.load_action_plan)
 risk_summary = data.safe_load(data.load_risk_summary)
 
 total_hrr = data.total_realized_revenue(value_by_tier)
-highest = data.highest_value_segment(value_by_segment)
 high_risk_exposure = data.high_risk_historical_revenue_exposure(risk_value_matrix)
 high_value_n = data.high_value_customer_count(risk_value_matrix)
 
-theme.stat_row([
-    {"label": "Total Realized Revenue", "value": theme.fmt_currency(total_hrr)},
-    {"label": "Highest-Value Segment", "value": highest["segment"]},
-    {"label": "High-Risk Historical Revenue Exposure", "value": theme.fmt_currency(high_risk_exposure)},
-    {"label": "High-Value Customers", "value": theme.fmt_count(high_value_n)},
+theme.kpi_strip([
+    {"label": "Revenue to date", "value": theme.fmt_currency(total_hrr), "dot": theme.COLORS["neutral"],
+     "note": "Every scored customer, all time."},
+    {"label": "Revenue from high-risk customers", "value": theme.fmt_currency(high_risk_exposure), "dot": theme.COLORS["high"],
+     "note": "Already earned from High-risk customers -- not a forecast of loss (High-Risk Historical Revenue Exposure)."},
+    {"label": "High-value customers", "value": theme.fmt_count(high_value_n), "dot": theme.COLORS["low"],
+     "note": "Top value tier, across every risk tier."},
 ])
-st.caption(
-    "\"High-Risk Historical Revenue Exposure\" = actual historical revenue already held by "
-    "customers in the model's High-risk tier -- not a probability-weighted expected loss. It is "
-    "based on Model Risk Score, which is not a calibrated probability (see Methodology below)."
-)
+st.write("")
 
-theme.section("Where revenue concentrates", "Total realized revenue held by each behavioral segment.")
+# ---------------------------------------------------------------------------
+# The risk x value grid: where attention and historical value intersect. Each cell holds just two
+# numbers -- customers and observed churn -- tinted by churn; the inspector beside it turns any
+# cell into a drill-down into exactly those customers.
+# ---------------------------------------------------------------------------
+tiers_order = ["Low", "Medium", "High"]
+cells = {}
+for rt in tiers_order:
+    for vt in tiers_order:
+        cells[(rt, vt)] = {
+            "risk": rt, "value": vt,
+            "n": int(risk_value_matrix.loc[rt, f"n_{vt}"]),
+            "pct": float(risk_value_matrix.loc[rt, f"pct_{vt}"]),
+            "churn": float(risk_value_matrix.loc[rt, f"churn_rate_pct_{vt}"]),
+            "avg_hrr_ntd": float(risk_value_matrix.loc[rt, f"avg_hrr_{vt}"]),
+        }
+hh = cells[("High", "High")]
 
+matrix_col, inspect_col = st.columns([1.6, 1], gap="medium")
+
+with inspect_col:
+    with st.container(key="rp_inspect"):
+        theme.panel_head("Inspect a group", right="pick risk &amp; value")
+        sel_risk = st.segmented_control("Risk tier", tiers_order, default="High", key="cv_risk") or "High"
+        sel_value = st.segmented_control("Value tier", tiers_order, default="High", key="cv_value") or "High"
+        c = cells[(sel_risk, sel_value)]
+        is_zone = (sel_risk, sel_value) == ("High", "High")
+        theme.md(
+            f"""<div class="ri-inspect">
+                <div class="t">{sel_risk} risk &times; {sel_value} value{" &middot; save first" if is_zone else ""}</div>
+                <div class="ri-facts">
+                    <div><div class="l">Customers</div><div class="v">{c['n']:,}</div></div>
+                    <div><div class="l">Churn rate</div><div class="v" style="color:{theme.RISK_TEXT_COLOR_MAP[sel_risk]};">{c['churn']:.1f}%</div></div>
+                    <div><div class="l">Share of base</div><div class="v">{c['pct']:.2f}%</div></div>
+                    <div><div class="l">Avg. revenue to date</div><div class="v">{theme.fmt_currency(c['avg_hrr_ntd'])}</div></div>
+                </div>
+            </div>"""
+        )
+        if st.button(f"Review these {c['n']:,} customers in Priority Customers →", key="cv_drill", type="primary", width="stretch"):
+            st.session_state["pending_filter"] = {"risk_tier": [sel_risk], "value_tier": [sel_value]}
+            st.switch_page("pages/priority_customers.py")
+
+with matrix_col:
+    with st.container(key="rp_matrix"):
+        theme.panel_head("Risk &times; value", right="customers &middot; churn rate")
+        head = '<div></div>' + "".join(f'<div class="ri-mx-h">{vt} value</div>' for vt in tiers_order)
+        body = []
+        for rt in ["High", "Medium", "Low"]:
+            body.append(f'<div class="ri-mx-r"><div>Risk<b style="color:{theme.RISK_TEXT_COLOR_MAP[rt]};">{rt}</b></div></div>')
+            for vt in tiers_order:
+                cc = cells[(rt, vt)]
+                rgb = theme.RISK_COLOR_MAP[rt].lstrip("#")
+                r, g, b = int(rgb[0:2], 16), int(rgb[2:4], 16), int(rgb[4:6], 16)
+                tint = f"rgba({r},{g},{b},{0.02 + 0.16 * cc['churn'] / 100:.3f})"
+                zone = (rt, vt) == ("High", "High")
+                sel = (rt, vt) == (sel_risk, sel_value)
+                classes = "ri-cell" + (" zone" if zone else "") + (" sel" if sel else "")
+                tag_html = '<span class="tag"><span class="ri-badge High">Priority zone</span></span>' if zone else ""
+                body.append(
+                    f'<div class="{classes}" style="background:{tint};" title="{rt} risk · {vt} value: {cc["n"]:,} customers">'
+                    f'{tag_html}'
+                    f'<div class="n">{theme.fmt_count(cc["n"])}</div>'
+                    f'<div class="churn" style="color:{theme.RISK_TEXT_COLOR_MAP[rt]};">{cc["churn"]:.1f}% churn</div></div>'
+                )
+        st.markdown(
+            f'<div class="ri-matrix">{head}{"".join(body)}</div>'
+            '<div class="ri-mx-axis">Revenue to date &rarr;</div>',
+            unsafe_allow_html=True,
+        )
+        theme.insight(
+            f"<b>High risk + high value</b> ({theme.fmt_count(hh['n'])} customers, {hh['churn']:.1f}% churn) is the "
+            f"one group where both conditions hold -- the strongest case for personal retention outreach."
+        )
+
+# ---------------------------------------------------------------------------
+# Where revenue concentrates, by behavioural segment
+# ---------------------------------------------------------------------------
 vbs = value_by_segment.sort_values("total_HRR", ascending=True)
-# P1-10: previously every non-Champions segment shared one color, so Stable/Monitor (explicitly
-# "no action recommended" everywhere else in this product) read as visually equal to the actual
-# at-risk segments retention effort should target. Reusing the theme's own existing color
-# semantics (accent = actions/priority, per theme.py's own palette comment) rather than inventing
-# a new one: Champions keep their existing green, Stable/Monitor is muted to neutral grey, and
-# every genuinely actionable at-risk segment gets the accent color. No data or ordering changed.
+# P1-10: colour carries the segment's role -- Champions keep the growth colour, Stable/Monitor is
+# muted to neutral grey ("no action recommended" everywhere else in this product), and every
+# genuinely actionable at-risk segment gets the action colour. No data or ordering changed.
 def _segment_bar_color(segment_name: str) -> str:
     if segment_name == "Engaged Low-Risk (Champions)":
         return theme.COLORS["low"]
@@ -61,78 +129,33 @@ def _segment_bar_color(segment_name: str) -> str:
 bar_colors = [_segment_bar_color(s) for s in vbs["segment"]]
 fig = go.Figure(go.Bar(
     x=theme.to_inr(vbs["total_HRR"]), y=vbs["segment"], orientation="h", marker_color=bar_colors,
+    marker_line_width=0, width=0.55, marker_cornerradius=3,
     text=[f"{theme.fmt_currency(v)} · {p:.0f}%" for v, p in zip(vbs["total_HRR"], vbs["pct_of_total_HRR"])],
     textposition="outside", cliponaxis=False,
-    hovertemplate="%{y}<br>Revenue: ₹%{x:,.0f}<extra></extra>",
+    textfont=dict(size=11, color=theme.COLORS["text_muted"], family="Inter, sans-serif"),
+    customdata=vbs[["n_customers", "pct_of_total_HRR"]].values,
+    hovertemplate="<b>%{y}</b><br>Revenue to date ₹%{x:,.0f}<br>%{customdata[1]:.1f}% of all revenue<br>%{customdata[0]:,} customers<extra></extra>",
 ))
-theme.chart_layout(fig, height=theme.CHART_HEIGHT_LARGE, xaxis_title="Total realized revenue (₹)",
-                    xaxis=dict(range=[0, float(theme.to_inr(vbs["total_HRR"]).max()) * 1.18]))
-st.plotly_chart(fig, width="stretch", config=theme.PLOTLY_CONFIG)
-
-champions_row = action_plan[action_plan["priority_group"] == "Engaged Low-Risk (Champions)"].iloc[0]
-champions_pct_of_hrr = float(
-    value_by_segment.set_index("segment").loc["Engaged Low-Risk (Champions)", "pct_of_total_HRR"]
-)
-theme.insight(
-    f"<b>Champions</b> hold the largest share of realized revenue ({champions_pct_of_hrr:.1f}% of the "
-    f"total) and the lowest churn rate in the base ({champions_row['churn_rate_pct']:.1f}%). Value and risk "
-    f"move in opposite directions here -- exactly the segment retention spend should never target."
+theme.chart_layout(
+    fig, height=330,
+    xaxis=dict(visible=False, range=[0, float(theme.to_inr(vbs["total_HRR"]).max()) * 1.2]),
+    yaxis=dict(title=None, tickfont=dict(size=12, color=theme.COLORS["text"], family="Inter, sans-serif")),
+    margin=dict(l=8, r=24, t=8, b=8),
 )
 
 st.write("")
-theme.eyebrow("Value and risk move in opposite directions")
-theme.section(
-    "Where should retention spend go?",
-    "Every risk x value cell in the base. Size = avg. realized revenue per customer. Color = churn rate. "
-    "Percent labels = share of the base.",
-)
+with st.container(key="rp_revenue"):
+    theme.panel_head("Where revenue concentrates", right="revenue to date, by customer group")
+    theme.plot(fig)
+    theme.md(
+        f"""<div class="ri-legend">
+            <div><i style="background:{theme.COLORS['accent']};"></i>At-risk groups &mdash; where retention effort goes</div>
+            <div><i style="background:{theme.COLORS['low']};"></i>Champions &mdash; grow, don't retain</div>
+            <div><i style="background:{theme.COLORS['neutral']};"></i>Stable / Monitor &mdash; no action</div>
+        </div>"""
+    )
 
-tiers_order = ["Low", "Medium", "High"]
-cells = []
-for rt in tiers_order:
-    for vt in tiers_order:
-        cells.append({
-            "risk": rt, "value": vt,
-            "n": int(risk_value_matrix.loc[rt, f"n_{vt}"]),
-            "pct": float(risk_value_matrix.loc[rt, f"pct_{vt}"]),
-            "churn": float(risk_value_matrix.loc[rt, f"churn_rate_pct_{vt}"]),
-            "avg_hrr": float(theme.to_inr(risk_value_matrix.loc[rt, f"avg_hrr_{vt}"])),
-        })
-hh = next(c for c in cells if c["risk"] == "High" and c["value"] == "High")
-
-fig2 = go.Figure(go.Scatter(
-    x=[c["risk"] for c in cells], y=[c["value"] for c in cells],
-    mode="markers+text",
-    marker=dict(
-        size=[max(34, min(120, (c["avg_hrr"] ** 0.5) / 2.6)) for c in cells],
-        color=[c["churn"] for c in cells],
-        colorscale=[[0, theme.COLORS["low"]], [0.5, theme.COLORS["medium"]], [1, theme.COLORS["high"]]],
-        cmin=0, cmax=100,
-        line=dict(width=1, color="white"),
-        opacity=0.88,
-    ),
-    text=[(f"{c['pct']:.0f}%" if c["pct"] >= 1 else "<1%") for c in cells], textposition="middle center",
-    textfont=dict(color="white", size=12, family="Inter"),
-    customdata=[[c["n"], c["churn"], c["avg_hrr"]] for c in cells],
-    hovertemplate="<b>%{x} risk, %{y} value</b><br>%{customdata[0]:,} customers<br>Churn: %{customdata[1]:.1f}%<br>Avg. HRR: ₹%{customdata[2]:,.0f}<extra></extra>",
-))
-# High-risk/high-value gets the same halo language as Command Center's field -- one visual
-# identity for "where risk and value coincide" across the product.
-fig2.add_shape(
-    type="circle", xref="x", yref="y", layer="below", line=dict(width=2, color="rgba(201,74,74,0.4)"),
-    fillcolor="rgba(201,74,74,0.08)", x0=1.65, x1=2.35, y0=1.65, y1=2.35,
-)
-fig2.update_xaxes(categoryorder="array", categoryarray=tiers_order, title="Risk tier")
-fig2.update_yaxes(categoryorder="array", categoryarray=tiers_order, title="Value tier")
-theme.chart_layout(fig2, height=440)
-st.plotly_chart(fig2, width="stretch", config=theme.PLOTLY_CONFIG)
-
-theme.insight(
-    f"<b>High risk + high value</b> ({theme.fmt_count(hh['n'])} customers, {hh['churn']:.1f}% observed churn): "
-    f"these customers combine elevated churn risk with meaningful historical realized revenue, making them "
-    f"the strongest candidates for high-touch retention. Everywhere else on this field, at least one of "
-    f"those two conditions is missing."
-)
+theme.journey_next("pages/customer_value.py", key="next_customer_value")
 
 st.write("")
 caveats.render_caveats(

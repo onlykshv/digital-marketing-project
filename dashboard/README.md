@@ -29,36 +29,32 @@ Streamlit will open the dashboard in your browser (default: `http://localhost:85
 
 | # | Page | Question it answers | Data source(s) |
 |---|---|---|---|
-| 01 | Command Center | What's happening, and where should we act first? | `risk_scoring_summary.json`, `marketing_action_plan.csv`, `value_by_risk_tier.csv`, `risk_value_matrix.csv` |
-| 02 | Risk Intelligence | Why are customers at risk? | `risk_scoring_threshold_analysis.csv`, `shap_feature_importance.csv`, `marketing_action_plan.csv` |
-| 03 | Customer Value | Where is the economic value concentrated? | `risk_value_matrix.csv`, `value_by_segment.csv`, `value_by_risk_tier.csv` |
-| 04 | Action Center | What should we do, and for whom? | `marketing_action_plan.csv` / `.json` |
-| 05 | Customer 360 | Find a customer — then see their full profile | `customer_segments.csv`, `risk_scoring_predictions.csv`, `customer_value_tiers.csv` (loaded on demand only) |
+| 01 | Overview | Where should KKBOX act? | `risk_scoring_summary.json`, `marketing_action_plan.csv`, `risk_value_matrix.csv`, `temporal_validation_results.json` |
+| 02 | Priority Customers | Who should we save? | customer tables (below), `shap_feature_importance.csv`, `risk_scoring_threshold_analysis.csv` |
+| 03 | Customer Value | Who is worth saving? | `risk_value_matrix.csv`, `value_by_segment.csv`, `value_by_risk_tier.csv` |
+| 04 | Action Center | What should we do? | `marketing_action_plan.csv` |
+| 05 | Customer 360 | What should we do for this customer? | `customer_segments.csv`, `risk_scoring_predictions.csv`, `customer_value_tiers.csv`, `calibrated_probabilities.csv` (loaded on demand only) |
+| 06 | Retention Intelligence | Why? Ask the intelligence layer. | the agent's nine read-only tools over the files above |
+
+The demo journey is Overview → Priority Customers → Customer 360 → Retention Intelligence; the
+customer or segment in focus is carried between pages through session state. Start the demo from
+the root URL (`http://localhost:8501/`).
 
 ## Design system
 
-- **Hierarchy over inventory**: each page leads with the one number or chart that answers its
-  question, not a row of equally-weighted KPI cards. Secondary numbers use `theme.stat_row` (a
-  quiet inline row, no card/border) instead of `st.metric` widgets; low-priority items (e.g. the
-  Stable segment on Action Center) deliberately recede via `theme.recede`.
-- **Palette**: one dark navy for structural chrome (headers, sidebar, selected nav), one accent
-  (amber/orange) for actions and priority callouts, and three semantic colors reserved
-  exclusively for risk — green (low), amber (medium), red (high). No rainbow charts.
-- **Typography**: Inter, with a strict hierarchy (hero/page header → section title → stat →
-  supporting text). Labels are uppercase/muted; the one number that matters per page is large
-  and bold — everything else is deliberately smaller.
-- **Cards, sparingly**: white background, thin border, no hover animation — reserved for the
-  handful of items that genuinely warrant full visual containment (the top 1-2 priority
-  opportunities, the risk/value quadrants). Ranked lists (churn drivers, secondary segments) use
-  large numerals or a plain table instead of another card grid.
-- **Badges**: tinted outline chips (`theme.badge`), not solid pill fills — color still carries
-  meaning (risk tier, intervention intensity) without the "sticker" look.
-- **Charts**: one shared Plotly template (`lib/theme.py`), fixed height tiers, no default
-  toolbar clutter, consistent hover styling. Every chart on the dashboard answers a specific
-  question (concentration, ranking, risk x value) — none exist just because the data was there.
-- **Progressive disclosure**: every page follows *what's happening → where → why → who → what to
-  do*. Methodology, model metrics, and caveats are collapsed by default at the bottom of each
-  page, not the top.
+A dark "command dashboard" layout adapted from the Romer SaaS template on Stitch (`lib/theme.py`):
+
+- **App shell**: a fixed left navigation rail (`st.navigation(position="sidebar")`) with icons and
+  uppercase labels; the active page is marked in cyan.
+- **One idea per page**: a page title that is the page's question, one sentence of context, at
+  most three stat cards, then one main panel and one side panel (`st.container(key="rp_...")`).
+- **Plain marketing language first**: customers, churn rate, revenue to date, campaigns. Model
+  scores, probabilities, drivers, thresholds and methodology sit behind "Details" toggles and the
+  "Methodology & limitations" panel at the bottom of each page.
+- **Colour means something**: near-black surfaces; the only bright elements are small status dots
+  and badges — coral (high risk), amber (medium), green (low / growth) — plus indigo for actions.
+- **Type**: Manrope for headings and big numbers (tight tracking), Inter for everything else.
+- **Charts**: one shared dark Plotly template, no toolbar, every chart answers a specific question.
 
 ## Design notes
 
@@ -86,18 +82,20 @@ been run yet, or the app isn't being launched from inside the project's `dashboa
 ```
 dashboard/
   app.py                     # entry point — run this with `streamlit run`
-  .streamlit/config.toml     # forces a consistent light theme regardless of viewer's OS setting
+  .streamlit/config.toml     # forces the dark theme regardless of the viewer's OS setting
   pages/
-    command_center.py        # 01 — Command Center
-    risk_intelligence.py     # 02 — Risk Intelligence
+    overview.py              # 01 — Overview
+    priority_customers.py    # 02 — Priority Customers
     customer_value.py        # 03 — Customer Value
     action_center.py         # 04 — Action Center
     customer_360.py          # 05 — Customer 360
+    retention_copilot.py     # 06 — Retention Intelligence
   lib/
     data.py                  # cached, read-only loaders + small derived aggregates
-    theme.py                 # design system: palette, CSS, Plotly template, hero/stat/rank helpers
-    components.py            # shared UI: priority opportunity cards, risk/value quadrant cards
-    caveats.py                # the methodology/limitations panels shown on each page
+    theme.py                 # design system: tokens, CSS, Plotly template, page/panel/stat helpers
+    components.py            # shared UI: recommendation + play blocks, the answer renderer
+    caveats.py               # the methodology/limitations panels shown on each page
+    agent*.py, copilot_*.py, llm_provider.py   # Retention Intelligence (unchanged by UI work)
   requirements.txt
   README.md
 ```

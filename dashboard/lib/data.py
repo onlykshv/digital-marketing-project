@@ -281,3 +281,17 @@ def key_risk_signal(latest_is_auto_renew, days_since_last_txn, cancel_rate) -> s
     if cancel_rate is not None and cancel_rate > 0.05:
         return "Elevated cancellation history"
     return "Multiple smaller signals"
+
+
+def segment_label_gap(risk_tier, segment) -> bool:
+    """True when a customer sits in an elevated risk tier but carries the `Stable / Monitor` label.
+
+    A presentation flag only -- it changes no label, action or number. The action framework defines
+    an "Unmatched At-Risk (no segment)" group (5,890 Medium/High-risk customers who match none of the
+    named at-risk rules), but outputs/customer_segments.csv has no such per-customer label: those
+    same 5,890 customers (1,255 High + 4,635 Medium) carry "Stable / Monitor" instead, and so inherit
+    its "Monitor only" playbook. Verified in task_1/FINAL_PRESENTATION_READINESS_AUDIT.md (A1). The
+    UI discloses the mismatch wherever such a customer is shown, rather than silently presenting a
+    high-risk customer as low-risk "monitor only".
+    """
+    return str(risk_tier) in ("High", "Medium") and str(segment) == "Stable / Monitor"

@@ -93,9 +93,18 @@ def test_priority_customers_applies_a_segment_filter_carried_from_overview():
 def test_priority_customers_pending_filter_is_consumed_once_not_left_stale():
     # The exact same session-state slot other deep links (search-results, Action Center, the
     # segment take-action button) already rely on being popped, not merely read -- proved here by
-    # reusing the SAME session across two reruns: the filter must apply on the render it arrives
-    # with, then disappear on the very next rerun of that same session, never silently reapplying
-    # itself on an unrelated later interaction (e.g. clearing the search box).
+    # reusing the SAME session across several reruns: the filter applies on the render it arrives
+    # with, the one-time `pending_filter` slot is consumed, and it never silently reapplies itself
+    # over a filter the manager has since changed by hand.
+    #
+    # UI-refurbishment correction: this test previously also asserted that the carried segment
+    # filter DISAPPEARED from the Segment widget on the next unrelated rerun ("back to the page's own
+    # default"). That encoded a real defect rather than the intent above: in the live app the
+    # carried filter vanished on the manager's very next click -- including the click that selects a
+    # row -- so the table reloaded under them and the row selection was lost, breaking
+    # Overview -> Priority Customers -> Customer 360 whenever a filter was carried over. The carried
+    # filter now becomes the manager's own current filter (it stays through unrelated reruns), and
+    # the "never re-applied" intent is asserted directly and more strictly below.
     segment = _real_top_opportunity_segment()
     at = AppTest.from_file(PRIORITY_CUSTOMERS_PAGE, default_timeout=180)
     at.session_state["pending_filter"] = {"segment": [segment]}
@@ -104,10 +113,18 @@ def test_priority_customers_pending_filter_is_consumed_once_not_left_stale():
     assert seg_widget.value == [segment]
     assert "pending_filter" not in at.session_state
 
+    # An unrelated rerun keeps the filter the manager is looking at -- it is now their filter.
     search_widget = next(w for w in at.text_input if w.label == "Search by Customer ID")
     search_widget.set_value("").run()
-    seg_widget_after = next(w for w in at.multiselect if w.label == "Segment")
-    assert seg_widget_after.value != [segment]  # back to the page's own default, not stale
+    assert next(w for w in at.multiselect if w.label == "Segment").value == [segment]
+    assert "pending_filter" not in at.session_state
+
+    # The manager clears it by hand: the carried filter must never re-assert itself afterwards.
+    next(w for w in at.multiselect if w.label == "Segment").set_value([]).run()
+    assert next(w for w in at.multiselect if w.label == "Segment").value == []
+    search_widget = next(w for w in at.text_input if w.label == "Search by Customer ID")
+    search_widget.set_value("").run()
+    assert next(w for w in at.multiselect if w.label == "Segment").value == []  # not stale
 
 
 # ---------------------------------------------------------------------------

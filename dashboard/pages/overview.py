@@ -3,7 +3,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import plotly.graph_objects as go
 import streamlit as st
 
 from lib import caveats, components, data, theme
@@ -12,175 +11,128 @@ theme.apply_page_style()
 
 risk_summary = data.safe_load(data.load_risk_summary)
 action_plan = data.safe_load(data.load_action_plan)
-value_by_tier = data.safe_load(data.load_value_by_tier)
 risk_value_matrix = data.safe_load(data.load_risk_value_matrix)
 temporal_results = data.safe_load(data.load_temporal_results)
 
 tiers_by_name = {t["tier"]: t for t in risk_summary["risk_tiers"]}
-total_hrr = data.total_realized_revenue(value_by_tier)
+thresholds = risk_summary["recommended_thresholds"]
 intervention_needed = data.customers_requiring_intervention(action_plan)
 opportunities = data.priority_opportunities(action_plan, top_n=1)
 top_opportunity = opportunities.iloc[0]
-champions = action_plan[action_plan["priority_group"] == "Engaged Low-Risk (Champions)"].iloc[0]
-stable = action_plan[action_plan["priority_group"] == "Stable / Monitor"].iloc[0]
 
-# ---------------------------------------------------------------------------
-# WHERE SHOULD KKBOX ACT? -- the one thing this page needs to say in five seconds.
-# ---------------------------------------------------------------------------
-theme.hero_header(
-    "OVERVIEW · WHERE SHOULD KKBOX ACT?",
-    f'<span class="accent-num">{theme.fmt_count(intervention_needed)}</span> customers need attention',
-    f"{theme.fmt_count(tiers_by_name['High']['n_customers'])} of them are in the highest-risk tier, "
-    f"out of {theme.fmt_count(risk_summary['n_customers_scored'])} customers scored.",
+n_scored = risk_summary["n_customers_scored"]
+n_high = tiers_by_name["High"]["n_customers"]
+hh = risk_value_matrix.loc["High"]
+n_zone = int(hh["n_High"])
+zone_churn = float(hh["churn_rate_pct_High"])
+zone_avg_hrr = float(hh["avg_hrr_High"])
+base_churn_pct = risk_summary["actual_churn_rate"] * 100
+
+theme.masthead(
+    "pages/overview.py", "Retention overview", "Where should KKBOX act?",
+    f"{theme.fmt_count(n_scored)} KKBOX subscribers, scored for how likely they are to leave &mdash; "
+    "and the small group worth saving first.",
 )
 
-# P1-13: the AI assistant is this product's headline differentiator, but until now nothing on the
-# page a manager lands on first said so -- the only route into Retention Intelligence lived below
-# the priority-zone chart, requiring a scroll before a first-time visitor could discover it. This
-# is the SAME "Ask Retention Intelligence about {segment}" handoff already used further down this
-# page (same session-state mechanism, same real top_opportunity data, not a new claim or a new
-# destination) -- only its position moved into the hero itself, so the hero workflow is reachable
-# without scrolling, on the very number the hero just stated.
-if st.button(
-    f"Ask Retention Intelligence: why does {top_opportunity['priority_group']} need attention? →",
-    key="hero_ask_ri", type="primary",
-):
-    st.session_state["copilot_segment_choice"] = top_opportunity["priority_group"]
-    st.switch_page("pages/retention_copilot.py")
-
-theme.insight(
-    "Instead of treating the entire customer base equally, Retention Intelligence narrows the "
-    "retention team's attention to customers with elevated churn risk -- and further, to the "
-    "ones where that risk is worth spending on."
-)
-
-theme.stat_row([
-    {"label": "Customers Scored", "value": theme.fmt_count(risk_summary["n_customers_scored"])},
-    {"label": "Overall Churn Rate", "value": theme.fmt_pct(risk_summary["actual_churn_rate"] * 100)},
-    {"label": "Realized Revenue (Base)", "value": theme.fmt_currency(total_hrr)},
-    {"label": "Model Validated On", "value": "Future data (temporal holdout)"},
+# ---------------------------------------------------------------------------
+# The three numbers the whole product rests on, read left to right: everyone -> those showing risk
+# signals -> the few to save first.
+# ---------------------------------------------------------------------------
+theme.kpi_strip([
+    {"label": "Customers analyzed", "value": theme.fmt_count(n_scored), "dot": theme.COLORS["neutral"],
+     "note": f"{base_churn_pct:.1f}% churn rate across the base"},
+    {"label": "Showing risk signals", "value": theme.fmt_count(intervention_needed), "dot": theme.COLORS["medium"],
+     "note": f"{theme.fmt_count(n_high)} of them at the highest risk"},
+    {"label": "Save first", "value": theme.fmt_count(n_zone), "dot": theme.COLORS["high"],
+     "note": "High risk and high value", "note_color": theme.COLORS["high_text"]},
 ])
-
-theme.section("Who is at risk, and what is at stake", "Every risk x value combination in the base. Size = number of customers.")
-theme.field_status_badge("Priority zone identified — high risk × high value")
-
-tiers_order = ["Low", "Medium", "High"]
-points = []
-for rt in tiers_order:
-    row = risk_value_matrix.loc[rt]
-    for vt in tiers_order:
-        points.append({
-            "risk_tier": rt, "value_tier": vt,
-            "churn_rate": row[f"churn_rate_pct_{vt}"],
-            "avg_hrr": theme.to_inr(row[f"avg_hrr_{vt}"]),
-            "n": row[f"n_{vt}"],
-        })
-
-x_max = max(p["churn_rate"] for p in points)
-y_max = max(p["avg_hrr"] for p in points)
-priority_point = next(p for p in points if p["risk_tier"] == "High" and p["value_tier"] == "High")
-
-fig = go.Figure()
-
-# The "field" backdrop: heat concentrated where risk and value coincide, fading outward --
-# a mood layer only. Every number the customer can read still comes from the markers/hover
-# below, not from this shading.
-for scale, alpha in [(0.60, 0.05), (0.42, 0.08), (0.26, 0.13)]:
-    fig.add_shape(
-        type="circle", xref="x", yref="y", layer="below", line_width=0,
-        fillcolor=f"rgba(201,74,74,{alpha})",
-        x0=priority_point["churn_rate"] - x_max * scale, x1=priority_point["churn_rate"] + x_max * 0.12,
-        y0=priority_point["avg_hrr"] - y_max * scale, y1=priority_point["avg_hrr"] + y_max * 0.12,
-    )
-# A halo ring around the one point that is genuinely both high-risk and high-value.
-fig.add_shape(
-    type="circle", xref="x", yref="y", layer="below", line=dict(width=2, color="rgba(201,74,74,0.35)"),
-    fillcolor="rgba(0,0,0,0)",
-    x0=priority_point["churn_rate"] - x_max * 0.10, x1=priority_point["churn_rate"] + x_max * 0.10,
-    y0=priority_point["avg_hrr"] - y_max * 0.10, y1=priority_point["avg_hrr"] + y_max * 0.10,
-)
-
-for rt in tiers_order:
-    pts = [p for p in points if p["risk_tier"] == rt]
-    fig.add_trace(go.Scatter(
-        x=[p["churn_rate"] for p in pts],
-        y=[p["avg_hrr"] for p in pts],
-        mode="markers",
-        name=f"{rt} risk",
-        marker=dict(
-            size=[max(20, min(80, (p["n"] ** 0.5) / 6)) for p in pts],
-            color=theme.RISK_COLOR_MAP[rt],
-            opacity=0.82,
-            line=dict(width=1, color="white"),
-        ),
-        customdata=[[p["value_tier"], p["n"]] for p in pts],
-        hovertemplate=(
-            f"<b>{rt} risk, %{{customdata[0]}} value</b><br>"
-            "Churn rate: %{x:.1f}%<br>Avg. HRR: ₹%{y:,.0f}<br>Customers: %{customdata[1]:,}<extra></extra>"
-        ),
-    ))
-fig.add_annotation(
-    x=priority_point["churn_rate"], y=priority_point["avg_hrr"] + y_max * 0.14,
-    text="<b>PRIORITY ZONE</b>", showarrow=False,
-    font=dict(size=12, color=theme.COLORS["high"]), xanchor="center", yanchor="bottom",
-)
-theme.chart_layout(
-    fig, height=560, xaxis_title="Churn rate (%)", yaxis_title="Avg. realized revenue per customer (₹)",
-    xaxis=dict(range=[-x_max * 0.06, x_max * 1.25]), yaxis=dict(range=[-y_max * 0.06, y_max * 1.22]),
-)
-st.plotly_chart(fig, width="stretch", config=theme.PLOTLY_CONFIG)
-
-theme.insight(
-    "High risk and high value rarely coincide at scale -- most realized revenue sits with "
-    "<b>Low-risk</b> customers. The small High-risk/High-value pocket in the top-right is worth "
-    "individual attention; everything else is handled at the segment level below."
-)
-
 st.write("")
-left, right = st.columns([3, 2], gap="large")
-with left:
-    components.recommendation_block(
-        eyebrow="THE BIGGEST ACTIONABLE OPPORTUNITY",
-        title=top_opportunity["priority_group"],
-        stat_html=(
-            f"<b>{theme.fmt_count(top_opportunity['n_customers'])}</b> customers &middot; "
-            f"<b style='color:{theme.COLORS['high']};'>{top_opportunity['churn_rate_pct']:.1f}%</b> churn &middot; "
-            f"<b>{theme.fmt_currency(top_opportunity['total_HRR'])}</b> realized revenue"
-        ),
-        objective=top_opportunity["marketing_objective"],
-        intensity=top_opportunity["intervention_intensity"],
-        why=data.SHORT_WHY_BY_SEGMENT.get(top_opportunity["priority_group"], "Elevated model risk for this segment."),
-        rationale=top_opportunity["rationale"],
-        size="large",
-    )
-    if st.button(f"Ask Retention Intelligence about {top_opportunity['priority_group']} →", key="ask_ri_overview"):
-        st.session_state["copilot_segment_choice"] = top_opportunity["priority_group"]
-        st.switch_page("pages/retention_copilot.py")
-    # P1-08: this is the page's one "portfolio signal" -- the biggest actionable opportunity --
-    # so the link into the work queue must actually carry that segment as a starting filter,
-    # not drop the manager into the generic default view. Same `pending_filter` mechanism
-    # priority_customers.py already consumes (from the Retention Intelligence search-results and
-    # segment deep links) -- no new session-state convention, no new filtering logic.
-    if st.button(f"View {top_opportunity['priority_group']} customers in Priority Customers →", key="view_priority_customers_overview"):
-        st.session_state["pending_filter"] = {"segment": [top_opportunity["priority_group"]]}
-        st.switch_page("pages/priority_customers.py")
 
-with right:
-    components.secondary_story(
-        eyebrow="PROTECT THE WINNERS -- GROWTH, NOT RISK",
-        title=champions["priority_group"],
-        stat_html=(
-            f"<b>{theme.fmt_count(champions['n_customers'])}</b> customers &middot; "
-            f"<b style='color:{theme.COLORS['low']};'>{champions['churn_rate_pct']:.1f}%</b> churn &middot; "
-            f"<b>{theme.fmt_currency(champions['total_HRR'])}</b> realized revenue"
-        ),
-        objective=champions["marketing_objective"],
-        color=theme.COLORS["low"],
+funnel_col, start_col = st.columns([1.55, 1], gap="medium")
+
+# ---------------------------------------------------------------------------
+# WHERE SHOULD KKBOX ACT? -- the scored base narrowed, step by step, to the customers worth
+# individual attention. Bar widths are linear shares of the base (no scale distortion), and each
+# stage is a genuine subset of the one above it.
+# ---------------------------------------------------------------------------
+stages = [
+    {"n": n_scored, "what": "Customers analyzed", "color": theme.COLORS["neutral"]},
+    {"n": intervention_needed, "what": "Showing risk signals", "color": theme.COLORS["medium"]},
+    {"n": n_high, "what": "Highest risk", "color": theme.COLORS["high"]},
+    {"n": n_zone, "what": "High risk + high value", "color": "#FF5A48"},
+]
+rows = []
+for i, s in enumerate(stages):
+    share = s["n"] / n_scored * 100
+    share_txt = f"{share:.0f}%" if share >= 99.5 else (f"{share:.1f}%" if share >= 1 else f"{share:.2f}%")
+    rows.append(
+        f'<div class="row{" focus" if i == 3 else ""}" data-n="{s["n"]}" data-share="{share:.4f}">'
+        f'<div class="n">{theme.fmt_count(s["n"])}</div><div>'
+        f'<div class="what"><b>{s["what"]}</b><span>{share_txt} of customers</span></div>'
+        f'<div class="bar"><i style="width:{share:.4f}%; background:{s["color"]};"></i></div></div></div>'
     )
-    theme.recede(
-        f"Separately, {theme.fmt_count(stable['n_customers'])} customers ({stable['pct_of_base']:.0f}% of the "
-        f"base) are Stable / Monitor -- {stable['churn_rate_pct']:.1f}% churn, no action recommended."
-    )
+
+with funnel_col:
+    with st.container(key="rp_funnel"):
+        theme.panel_head("From every customer to the few to save first", right="share of all customers")
+        st.markdown(f'<div class="ri-funnel">{"".join(rows)}</div>', unsafe_allow_html=True)
+        theme.insight(
+            f"The last group is small &mdash; <b>{theme.fmt_count(n_zone)}</b> customers &mdash; but "
+            f"<b>{zone_churn:.1f}%</b> of them churn, and each has already spent "
+            f"<b>{theme.fmt_currency(zone_avg_hrr)}</b> on average. That is where personal outreach pays off."
+        )
+        if st.button(
+            f"Review the {theme.fmt_count(n_zone)} high-risk, high-value customers →",
+            key="ov_zone_to_priority", type="primary",
+        ):
+            st.session_state["pending_filter"] = {"risk_tier": ["High"], "value_tier": ["High"]}
+            st.switch_page("pages/priority_customers.py")
+        with st.expander("How these groups are defined"):
+            st.markdown(
+                f"Every customer gets a **Model Risk Score** from the churn model. **Showing risk signals** "
+                f"means a score of {thresholds['medium_risk_threshold']:.2f} or more (the Medium and High "
+                f"tiers); **highest risk** means {thresholds['high_risk_threshold']:.2f} or more, where "
+                f"{tiers_by_name['High']['observed_churn_rate_in_tier']:.1f}% actually churned. **High value** "
+                "is the top tier of Historical Realized Revenue &mdash; money already collected, not a forecast."
+            )
+
+# ---------------------------------------------------------------------------
+# Start here -- the single biggest actionable play, with the two ways forward: the customers
+# themselves (P1-08: the page's portfolio signal carries into the work queue as a starting filter)
+# and the assistant (P1-13: Retention Intelligence reachable from the first screen, on the very
+# segment this panel names).
+# ---------------------------------------------------------------------------
+with start_col:
+    with st.container(key="rp_start"):
+        theme.panel_head("Start here", dot=theme.COLORS["cyan"], right="largest at-risk group")
+        components.recommendation_block(
+            eyebrow="Biggest opportunity",
+            title=top_opportunity["priority_group"],
+            stat_html=(
+                f"<b>{theme.fmt_count(top_opportunity['n_customers'])}</b> customers &middot; "
+                f"<b style='color:{theme.COLORS['high_text']};'>{top_opportunity['churn_rate_pct']:.1f}%</b> churn &middot; "
+                f"<b>{theme.fmt_currency(top_opportunity['total_HRR'])}</b> revenue to date"
+            ),
+            objective=top_opportunity["marketing_objective"],
+            intensity=top_opportunity["intervention_intensity"],
+            rationale=top_opportunity["rationale"],
+            size="small",
+        )
+        if st.button(
+            f"View {top_opportunity['priority_group']} customers in Priority Customers →",
+            key="view_priority_customers_overview", type="primary", width="stretch",
+        ):
+            st.session_state["pending_filter"] = {"segment": [top_opportunity["priority_group"]]}
+            st.switch_page("pages/priority_customers.py")
+        if st.button(
+            f"Ask Retention Intelligence: why does {top_opportunity['priority_group']} need attention? →",
+            key="hero_ask_ri", width="stretch",
+        ):
+            st.session_state["copilot_segment_choice"] = top_opportunity["priority_group"]
+            st.session_state["cust360_search"] = ""  # a segment question must not land on an earlier customer
+            st.switch_page("pages/retention_copilot.py")
+
+theme.journey_next("pages/overview.py", key="next_overview")
 
 st.write("")
 caveats.render_caveats(

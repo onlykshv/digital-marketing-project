@@ -61,21 +61,24 @@ def test_overview_hero_has_an_immediate_ask_retention_intelligence_cta():
 
 
 def test_hero_cta_source_appears_before_the_priority_zone_chart_section():
-    # Structural proof this is reachable without scrolling: the button's code must run before the
-    # chart section that TASK_05's audit found a first-time visitor had to scroll past.
+    # Structural proof this is reachable without scrolling. Romer-layout redesign: the Overview is
+    # now one screen -- three stat cards, then the funnel panel beside the "Start here" panel that
+    # holds this button -- so the CTA must sit in that first row of panels, i.e. before the page's
+    # closing "next step" row and methodology, never below them.
     src = open(OVERVIEW_PAGE, encoding="utf-8").read()
     hero_cta_pos = src.index('key="hero_ask_ri"')
-    chart_section_pos = src.index("Who is at risk, and what is at stake")
-    assert hero_cta_pos < chart_section_pos
+    assert hero_cta_pos < src.index("theme.journey_next(")
+    assert hero_cta_pos < src.index("caveats.render_caveats(")
 
 
-def test_hero_cta_appears_before_the_pre_existing_lower_cta_in_source_order():
-    # The hero CTA must come BEFORE the original recommendation-block CTA, not after/instead of
-    # it -- proving this is an addition, not a reordering that accidentally buried the original.
+def test_hero_cta_is_the_single_retention_intelligence_entry_point():
+    # Romer-layout redesign (simplification pass): the Overview used to carry two near-identical
+    # "Ask Retention Intelligence" buttons about the same segment -- the hero CTA and a lower
+    # recommendation-block CTA. They were merged into this one, which already carries the segment
+    # context and clears an earlier customer focus (see test_ui_refurbishment's handoff test).
     src = open(OVERVIEW_PAGE, encoding="utf-8").read()
-    hero_cta_pos = src.index('key="hero_ask_ri"')
-    lower_cta_pos = src.index('key="ask_ri_overview"')
-    assert hero_cta_pos < lower_cta_pos
+    assert 'key="hero_ask_ri"' in src
+    assert 'key="ask_ri_overview"' not in src
 
 
 # ---------------------------------------------------------------------------
@@ -118,12 +121,14 @@ def test_hero_cta_does_not_introduce_a_new_data_source():
 # Regression: the pre-existing CTAs and the plain-render behavior are unaffected.
 # ---------------------------------------------------------------------------
 
-def test_pre_existing_lower_ask_retention_intelligence_button_still_present():
+def test_the_merged_retention_intelligence_button_still_names_the_real_segment():
+    # What the removed lower CTA guaranteed -- a way into the assistant that names the real top
+    # segment -- is still guaranteed, by the one remaining button.
     segment = _real_top_opportunity_segment()
     at = AppTest.from_file(OVERVIEW_PAGE, default_timeout=180)
     at.run()
     labels = [b.label for b in at.button]
-    assert f"Ask Retention Intelligence about {segment} →" in labels
+    assert any(l.startswith("Ask Retention Intelligence") and segment in l for l in labels)
 
 
 def test_pre_existing_view_priority_customers_button_still_present():
@@ -141,14 +146,13 @@ def test_overview_still_renders_without_exception_on_a_plain_load():
 
 
 def test_overview_still_has_exactly_three_calls_to_action_no_accidental_duplicate():
-    # Sanity guard: exactly the two pre-existing buttons plus the one new hero CTA -- never a
-    # duplicate of the same action rendered twice by mistake.
+    # Sanity guard: exactly one "Ask Retention Intelligence" button on the Overview after the
+    # Romer-layout simplification merged the hero and lower CTAs -- never the same action twice.
     at = AppTest.from_file(OVERVIEW_PAGE, default_timeout=180)
     at.run()
     labels = [b.label for b in at.button]
     ri_buttons = [l for l in labels if l.startswith("Ask Retention Intelligence")]
-    assert len(ri_buttons) == 2  # hero CTA + the pre-existing recommendation-block CTA
-    assert len(set(ri_buttons)) == 2  # and they are genuinely two different labels, not a dupe
+    assert len(ri_buttons) == 1
 
 
 # ---------------------------------------------------------------------------

@@ -460,8 +460,10 @@ def test_overview_and_action_center_still_render_without_exception():
 
 
 def test_overview_links_to_retention_intelligence_with_segment_context():
+    # Romer-layout redesign: the Overview's one RI button reads "Ask Retention Intelligence: why
+    # does <segment> need attention?" (the former "...about <segment>" duplicate was merged into it).
     src = open(f"{DASHBOARD_DIR}/pages/overview.py", encoding="utf-8").read()
-    assert "Ask Retention Intelligence about" in src
+    assert "Ask Retention Intelligence" in src
     assert 'st.session_state["copilot_segment_choice"]' in src
     assert 'st.switch_page("pages/retention_copilot.py")' in src
 
@@ -477,7 +479,7 @@ def test_overview_cta_button_is_present_in_the_rendered_page():
     at = AppTest.from_file(f"{DASHBOARD_DIR}/pages/overview.py", default_timeout=180)
     at.run()
     labels = [b.label for b in at.button]
-    assert any(l.startswith("Ask Retention Intelligence about") for l in labels)
+    assert any(l.startswith("Ask Retention Intelligence") for l in labels)
 
 
 def test_action_center_cta_button_is_present_in_the_rendered_page():
@@ -798,6 +800,139 @@ def test_customer_360_and_priority_customers_source_level_links_unaffected_by_p1
     components_src = open(f"{DASHBOARD_DIR}/lib/components.py", encoding="utf-8").read()
     assert 'st.session_state["cust360_search"] = msno' in components_src
     assert 'st.switch_page("pages/customer_360.py")' in components_src
+
+
+# ---------------------------------------------------------------------------
+# Free-text / suggested-prompt state regression tests
+#
+# The bug these cover was real and reproducible (not hypothetical), and it made a suggested-prompt
+# button look broken: `st.text_input(key="copilot_freetext")` keeps its value in session state
+# across every later rerun, and the page used to READ that value each run and treat it as "the
+# question being asked" (`if free_q: st.session_state["copilot_asked"] = free_q`). Because the
+# suggested-prompt buttons render ABOVE that widget, clicking one set `copilot_asked` and the
+# still-populated free-text box then overwrote it further down the SAME script run -- so the click
+# silently did nothing. Fixed by treating a free-text submission as the event it is (an on_change
+# callback, which fires only on the rerun where new text was actually submitted) instead of as
+# persistent state, and by clearing the box whenever the question it holds stops being the active
+# one. No routing logic was duplicated: both question sources still only record WHICH question was
+# asked, and the single `agent.ask()` call at the bottom of the page still answers it.
+# ---------------------------------------------------------------------------
+
+_FREE_Q = "Which segment should we prioritize?"
+_SUGGESTED_Q = "How many customers are at elevated risk?"
+
+
+def _asked_block(at) -> str:
+    """The rendered 'You asked' question text -- what the manager actually sees, not just state."""
+    return " ".join(m.value for m in at.markdown if 'class="qa-question-text' in m.value)
+
+
+def _free_text_widget(at):
+    return next(w for w in at.text_input if w.key == "copilot_freetext")
+
+
+def test_free_text_then_suggested_prompt_actually_executes():
+    # The reported bug, exactly: type a free-text question, then click a suggested prompt.
+    at = AppTest.from_file(PAGE, default_timeout=180)
+    at.run()
+    _free_text_widget(at).set_value(_FREE_Q).run()
+    assert not at.exception
+    assert _FREE_Q in _asked_block(at)  # the free-text question really was asked first
+
+    next(b for b in at.button if b.label == _SUGGESTED_Q).click().run()
+    assert not at.exception
+    # The suggested prompt must win -- in session state, in the rendered question, and in the
+    # actual answer content (before the fix, all three still showed the stale free-text question).
+    assert at.session_state["copilot_asked"] == _SUGGESTED_Q
+    asked = _asked_block(at)
+    assert _SUGGESTED_Q in asked
+    assert _FREE_Q not in asked
+    assert "overall churn rate" in markdown_text(at).lower()
+
+
+def test_selecting_a_suggested_prompt_clears_the_free_text_box():
+    # A question left sitting in the box after a different question was answered reads as if it
+    # were still the active one -- and is what allowed it to re-assert itself on a later rerun.
+    at = AppTest.from_file(PAGE, default_timeout=180)
+    at.run()
+    _free_text_widget(at).set_value(_FREE_Q).run()
+    assert _free_text_widget(at).value == _FREE_Q
+    next(b for b in at.button if b.label == _SUGGESTED_Q).click().run()
+    assert at.session_state["copilot_freetext"] == ""
+    assert _free_text_widget(at).value == ""
+
+
+def test_suggested_prompt_then_free_text_executes():
+    # The reverse direction: a suggested prompt answered first must not block a free-text question
+    # submitted after it.
+    at = AppTest.from_file(PAGE, default_timeout=180)
+    at.run()
+    next(b for b in at.button if b.label == _SUGGESTED_Q).click().run()
+    assert at.session_state["copilot_asked"] == _SUGGESTED_Q
+
+    _free_text_widget(at).set_value(_FREE_Q).run()
+    assert not at.exception
+    assert at.session_state["copilot_asked"] == _FREE_Q
+    asked = _asked_block(at)
+    assert _FREE_Q in asked
+    assert _SUGGESTED_Q not in asked
+
+
+def test_free_text_is_not_resubmitted_on_an_unrelated_rerun():
+    # A rerun that has nothing to do with the question box (here: the "Load customer data" gate)
+    # must not re-submit the free-text value. The previous ANSWER legitimately stays on screen --
+    # it comes from `copilot_asked`, which is exactly the point: the box is no longer a second,
+    # competing source of truth for what was asked.
+    at = AppTest.from_file(PAGE, default_timeout=180)
+    at.run()
+    _free_text_widget(at).set_value(_FREE_Q).run()
+    next(b for b in at.button if b.label == "Load customer data").click().run()
+    assert not at.exception
+    assert at.session_state["copilot_asked"] == _FREE_Q
+    assert _FREE_Q in _asked_block(at)
+
+
+def test_context_switch_clears_both_the_answer_and_the_free_text_box():
+    # Switching focus already cleared the answer (so a stale one never looks like it belongs to the
+    # new context), but the free-text box used to survive that clearing and immediately re-ask its
+    # question against the NEW context on the same run.
+    at = AppTest.from_file(PAGE, default_timeout=180)
+    at.run()
+    _free_text_widget(at).set_value(_FREE_Q).run()
+    assert "You asked" in markdown_text(at)
+
+    next(w for w in at.selectbox if w.key == "copilot_segment_choice").select("At-Risk Veteran").run()
+    assert not at.exception
+    assert "Segment in focus" in markdown_text(at)
+    assert "You asked" not in markdown_text(at)
+    assert at.session_state["copilot_freetext"] == ""
+    assert _free_text_widget(at).value == ""
+
+    # ...and the newly-offered segment prompts still work normally from that clean state.
+    next(b for b in at.button if "important" in b.label.lower()).click().run()
+    assert not at.exception
+    assert "Retention Intelligence responds" in markdown_text(at)
+
+
+def test_fresh_session_asks_nothing_and_starts_with_an_empty_question_box():
+    at = AppTest.from_file(PAGE, default_timeout=180)
+    at.run()
+    assert not at.exception
+    assert _free_text_widget(at).value in ("", None)
+    assert "You asked" not in markdown_text(at)
+    # the first-open empty state is still the centerpiece
+    assert "Ask a question about customers, risk, value, or retention actions." in markdown_text(at)
+
+
+def test_free_text_submission_is_event_driven_not_read_from_widget_state():
+    # Source-level guard on the mechanism itself: the old read-and-assign pattern is what made a
+    # stale value able to override a fresh click, so its return to this page should fail a test
+    # rather than require re-finding the bug by hand.
+    src = open(PAGE, encoding="utf-8").read()
+    assert "on_change=_submit_free_text" in src
+    assert "if free_q:" not in src
+    # both question sources record the question only -- routing stays in the one agent.ask() call
+    assert src.count("response = agent.ask(") == 1
 
 
 # ---------------------------------------------------------------------------

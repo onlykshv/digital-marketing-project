@@ -272,6 +272,66 @@ def test_protected_directories_are_not_writable_targets_of_any_dashboard_code():
 
 
 # ---------------------------------------------------------------------------
+# Cross-page handoff regression -- a segment that exists in the action framework but not as a
+# per-customer label.
+#
+# The two segment vocabularies are not the same size: `copilot_data.SEGMENTS` carries all seven
+# groups from marketing_action_plan.csv, while outputs/customer_segments.csv labels customers with
+# only six -- "Unmatched At-Risk (no segment)" has no per-customer label (those at-risk customers
+# carry "Stable / Monitor" instead). Retention Intelligence's segment picker offers all seven, so
+# its "View {segment} customers in Priority Customers ->" handoff could hand this page a segment
+# its own multiselect has no option for, which Streamlit raises on
+# (StreamlitDefaultNotInOptionsError) -- a full error traceback three clicks from the flagship
+# page. Verified reachable before the fix; the handoff now degrades to "no segment filter".
+# ---------------------------------------------------------------------------
+
+_PRIORITY_PAGE = f"{DASHBOARD_DIR}/pages/priority_customers.py"
+
+
+def _run_priority_with_pending_filter(pending: dict):
+    at = AppTest.from_file(_PRIORITY_PAGE, default_timeout=300)
+    at.session_state["pending_filter"] = pending
+    at.session_state["lookup_loaded"] = True
+    at.run()
+    return at
+
+
+def _multiselect_value(at, label: str):
+    return next(w for w in at.multiselect if w.label == label).value
+
+
+def test_handoff_of_a_segment_with_no_per_customer_label_does_not_crash():
+    from lib import copilot_data, data
+
+    labelled = set(data.load_customer_lookup_data()["segment"].cat.categories)
+    unrepresented = [s for s in copilot_data.SEGMENTS if s not in labelled]
+    # If the per-customer labels ever gain the seventh group this particular value becomes moot,
+    # but the assertion must still hold, so fall back to a value that is an option either way.
+    probe = unrepresented[0] if unrepresented else "A Segment That Does Not Exist"
+
+    at = _run_priority_with_pending_filter({"segment": [probe]})
+    assert not at.exception, f"{probe!r} handoff raised: {at.exception}"
+    assert _multiselect_value(at, "Segment") == []
+    # the page's own sensible default must survive the dropped filter, not be blanked with it
+    assert _multiselect_value(at, "Risk tier") == ["High", "Medium"]
+
+
+def test_handoff_of_a_real_segment_is_still_applied():
+    # Regression guard on the fix itself: filtering out unrepresented values must not filter out
+    # the valid ones this handoff exists to carry.
+    at = _run_priority_with_pending_filter({"segment": ["At-Risk Veteran"]})
+    assert not at.exception
+    assert _multiselect_value(at, "Segment") == ["At-Risk Veteran"]
+
+
+def test_handoff_of_risk_and_value_tiers_is_still_applied():
+    at = _run_priority_with_pending_filter({"risk_tier": ["High"], "value_tier": ["High"]})
+    assert not at.exception
+    assert _multiselect_value(at, "Risk tier") == ["High"]
+    assert _multiselect_value(at, "Value tier") == ["High"]
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 
