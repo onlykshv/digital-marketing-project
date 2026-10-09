@@ -205,16 +205,16 @@ def test_overview_hero_ladder_numbers_are_the_real_figures():
 
 
 def test_overview_attention_funnel_bars_are_drawn_to_true_share():
-    # Romer-layout redesign: the attention story is a four-row funnel whose bar widths are linear
-    # shares of the real scored base (no log scale, no exaggeration of the small groups), and each
-    # stage is a subset of the one before it.
+    # Overview simplification pass: the attention story is the three stat cards themselves, read
+    # left to right, each carrying a bar drawn to its linear share of the real scored base (no log
+    # scale, no exaggeration of the small groups), and each stage a subset of the one before it.
+    # The "highest risk" count is no longer a separate bar -- it is the middle card's note (checked
+    # in test_overview_hero_ladder_numbers_are_the_real_figures).
     rs = data.load_risk_summary()
-    tiers = {t["tier"]: t for t in rs["risk_tiers"]}
     n_scored = rs["n_customers_scored"]
     stages = [
         n_scored,
         data.customers_requiring_intervention(data.load_action_plan()),
-        tiers["High"]["n_customers"],
         int(data.load_risk_value_matrix().loc["High", "n_High"]),
     ]
     at = AppTest.from_file(_page("overview"), default_timeout=300)
@@ -223,7 +223,7 @@ def test_overview_attention_funnel_bars_are_drawn_to_true_share():
     rows = re.findall(r'data-n="(\d+)" data-share="([\d.]+)"', funnel)
     assert [int(n) for n, _ in rows] == stages
     widths = [float(w) for w in re.findall(r'<i style="width:([\d.]+)%;', funnel)]
-    assert len(widths) == 4
+    assert len(widths) == 3
     for (n, _), w in zip(rows, widths):
         assert abs(w - int(n) / n_scored * 100) < 1e-3
     assert abs(widths[0] - 100.0) < 1e-6

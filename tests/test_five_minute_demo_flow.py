@@ -61,10 +61,10 @@ def test_overview_hero_has_an_immediate_ask_retention_intelligence_cta():
 
 
 def test_hero_cta_source_appears_before_the_priority_zone_chart_section():
-    # Structural proof this is reachable without scrolling. Romer-layout redesign: the Overview is
-    # now one screen -- three stat cards, then the funnel panel beside the "Start here" panel that
-    # holds this button -- so the CTA must sit in that first row of panels, i.e. before the page's
-    # closing "next step" row and methodology, never below them.
+    # Structural proof this is reachable without scrolling. Overview simplification pass: the page
+    # is one screen -- three stat cards, then the full-width "Start here" panel that holds this
+    # button -- so the CTA must sit in that panel, i.e. before the page's collapsed detail, closing
+    # "next step" row and methodology, never below them.
     src = open(OVERVIEW_PAGE, encoding="utf-8").read()
     hero_cta_pos = src.index('key="hero_ask_ri"')
     assert hero_cta_pos < src.index("theme.journey_next(")
@@ -153,6 +153,45 @@ def test_overview_still_has_exactly_three_calls_to_action_no_accidental_duplicat
     labels = [b.label for b in at.button]
     ri_buttons = [l for l in labels if l.startswith("Ask Retention Intelligence")]
     assert len(ri_buttons) == 1
+
+
+# ---------------------------------------------------------------------------
+# Overview simplification pass: one primary action, everything else visibly secondary.
+# ---------------------------------------------------------------------------
+
+def test_overview_has_exactly_one_primary_cta_and_it_opens_the_recommended_cohort():
+    segment = _real_top_opportunity_segment()
+    at = AppTest.from_file(OVERVIEW_PAGE, default_timeout=180)
+    at.run()
+    assert not at.exception
+    primary = [b for b in at.button if b.proto.type == "primary"]
+    assert [b.key for b in primary] == ["view_priority_customers_overview"]
+    primary[0].click().run()
+    assert len(at.exception) == 1  # AppTest harness navigation limitation, see above
+    assert "StreamlitPageNotFoundError" in str(at.exception[0]) or "Could not find page" in str(at.exception[0])
+    assert at.session_state["pending_filter"] == {"segment": [segment]}
+
+
+def test_overview_competing_buttons_are_demoted_not_removed():
+    at = AppTest.from_file(OVERVIEW_PAGE, default_timeout=180)
+    at.run()
+    types = {b.key: b.proto.type for b in at.button}
+    assert types["hero_ask_ri"] == "tertiary"
+    assert types["ov_zone_to_priority"] == "secondary"
+    assert types["next_overview"] == "secondary"
+
+
+def test_overview_zone_drilldown_and_definitions_sit_in_the_collapsed_detail():
+    # The zone drill-down and the group definitions are secondary detail: inside the collapsed
+    # "How these groups are defined" expander, after the primary CTA in the source.
+    src = open(OVERVIEW_PAGE, encoding="utf-8").read()
+    expander_pos = src.index('st.expander("How these groups are defined")')
+    assert src.index('key="view_priority_customers_overview"') < expander_pos
+    assert expander_pos < src.index('key="ov_zone_to_priority"') < src.index("theme.journey_next(")
+    at = AppTest.from_file(OVERVIEW_PAGE, default_timeout=180)
+    at.run()
+    labels = [e.label for e in at.expander]
+    assert labels == ["How these groups are defined", "Methodology & limitations"]
 
 
 # ---------------------------------------------------------------------------

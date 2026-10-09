@@ -622,16 +622,30 @@ def esc(text) -> str:
 # ---------------------------------------------------------------------------
 
 _COMPONENT_CSS = """
-/* ---------- attention funnel (Overview) ---------- */
-.ri-funnel { display: flex; flex-direction: column; gap: 1.05rem; padding: 0.4rem 0 0.2rem 0; }
-.ri-funnel .row { display: grid; grid-template-columns: 5.2rem 1fr; gap: 1.1rem; align-items: center; }
-.ri-funnel .n { font: 520 1.45rem/1 var(--head); letter-spacing: -0.04em; color: var(--strong); font-variant-numeric: tabular-nums; text-align: right; }
-.ri-funnel .what { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.88rem; color: var(--muted); margin-bottom: 0.4rem; }
-.ri-funnel .what b { color: var(--text); font-weight: 500; }
-.ri-funnel .bar { height: 10px; background: var(--sunken); border-radius: 3px; overflow: hidden; }
-.ri-funnel .bar i { display: block; height: 100%; border-radius: 3px; min-width: 3px; }
-.ri-funnel .row.focus .n { color: var(--high-text); }
-.ri-funnel .row.focus .what b { color: var(--high-text); }
+/* ---------- Overview: compact header ---------- */
+.st-key-ov_head .ri-mast { padding-bottom: 1.1rem; }
+.st-key-ov_head .ri-display { font-size: 2.4rem; }
+.st-key-ov_head .ri-deck { margin-top: 0.45rem; }
+
+/* ---------- attention funnel (Overview): the three stat cards as one left-to-right progression ---------- */
+.ri-funnel { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 0.5rem; margin: 0 0 0.8rem 0; }
+.ri-funnel .step { align-self: center; font: 400 1.4rem/1 var(--sans); color: var(--faint); }
+.ri-funnel .ri-kpi { padding: 0.9rem 1.1rem 0.95rem 1.1rem; min-width: 0; }
+.ri-funnel .ri-kpi-dot { top: 1rem; right: 1.1rem; }
+.ri-funnel .ri-kpi-value { font-size: 1.95rem; margin-top: 0.45rem; }
+.ri-funnel .ri-kpi-note { margin-top: 0.25rem; }
+.ri-funnel .share { display: flex; align-items: center; gap: 0.7rem; margin-top: 0.75rem; }
+.ri-funnel .share span { font-size: 0.74rem; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ri-funnel .bar { flex: 1; height: 4px; background: var(--sunken); border-radius: 2px; overflow: hidden; }
+.ri-funnel .bar i { display: block; height: 100%; border-radius: 2px; min-width: 3px; }
+@media (max-width: 760px) {
+  .ri-funnel { grid-template-columns: 1fr; }
+  .ri-funnel .step { display: none; }
+}
+.st-key-rp_start .recommendation-block { margin-bottom: 0.2rem; }
+.st-key-rp_start [data-testid="stColumn"]:last-child { gap: 0.4rem; }
+.st-key-rp_start button p { white-space: normal; overflow: visible; text-overflow: clip; }
+.st-key-rp_start button[data-testid="stBaseButton-primary"] { min-height: 3rem; }
 
 /* ---------- risk x value grid (Customer Value) ---------- */
 .ri-matrix { display: grid; grid-template-columns: 4.6rem repeat(3, 1fr); grid-template-rows: auto repeat(3, 1fr); gap: 6px; }
